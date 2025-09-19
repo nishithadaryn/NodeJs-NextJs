@@ -1,6 +1,6 @@
-// server.js
 import express from "express";
 import http from "http";
+import cors from "cors";
 import { Server } from "socket.io";
 import {
   startNewGame,
@@ -14,11 +14,27 @@ import { validateMove } from "./src/api/validators.js";
 import { makeMove } from "./src/api/shortcuts.js";
 
 const app = express();
-app.use(express.json()); // ✅ built-in JSON parser
 
+// ======================== CORS MIDDLEWARE ======================== //
+// Must match frontend exactly (no trailing slash)
+app.use(cors({
+  origin: "http://localhost:3000",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
+
+app.use(express.json()); // JSON parser
+
+// ======================== HTTP + SOCKET.IO ======================== //
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" }, // allow frontend
+  cors: { 
+    origin: "http://localhost:3000", // ✅ no trailing slash
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"],
+    credentials: true
+  }
 });
 
 // ======================== REST ENDPOINTS ======================== //
@@ -29,9 +45,7 @@ app.post("/games", async (req, res) => {
   const game = await startNewGame(player);
 
   if (!game) {
-    return res
-      .status(500)
-      .json({ detail: "Game cannot be started right now, please try again later" });
+    return res.status(500).json({ detail: "Game cannot be started right now, please try again later" });
   }
 
   res.json(game);
@@ -64,9 +78,7 @@ app.post("/games/:gameId/join", async (req, res) => {
 
   const updatedGame = await joinNewGame(game, req.body.player);
   if (!updatedGame) {
-    return res
-      .status(500)
-      .json({ detail: "Game cannot be joined right now, please try again later" });
+    return res.status(500).json({ detail: "Game cannot be joined right now, please try again later" });
   }
 
   // broadcast update
