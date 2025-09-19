@@ -1,8 +1,23 @@
+# Run backend without Docker
 run:
-	uvicorn src.main:app --reload
+	node backend/server.js
 
+# Run backend in development mode with auto-reload
+dev:
+	nodemon backend/server.js
+
+# Lint using ESLint
 lint:
-	pre-commit run --all
+	npx eslint backend --ext .js,.ts
 
+# Run tests using Jest
 test:
-	pytest ./tests/
+	npx jest backend
+
+# Run backend with Docker Compose
+docker-up:
+	docker compose up --build
+
+# Stop Docker Compose
+docker-down:
+	docker compose down

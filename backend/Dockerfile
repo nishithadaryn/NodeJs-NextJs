@@ -1,28 +1,23 @@
-# Start with an official Python runtime as a parent image
-FROM python:3.12-slim
+# Use official Node.js runtime
+FROM node:21-alpine
 
-# Set environmental variables
-ENV PYTHONUNBUFFERED=true
+# Set working directory
+WORKDIR /app
 
-# Set the working directory in the container
-WORKDIR /code
+# Copy package.json and package-lock.json
+COPY package*.json ./
 
-# Update
-RUN apt-get update && apt-get -y install libpq-dev gcc
+# Install dependencies
+RUN npm install --production
 
-# Copy poetry files
-COPY pyproject.toml poetry.lock /code/
+# Copy the rest of the app (including src/tests)
+COPY . .
 
-# Install poetry and project dependencies
-RUN pip install poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-root --without dev
+# Ensure ES modules are recognized
+ENV NODE_OPTIONS="--experimental-specifier-resolution=node"
 
-# Copy the project files into the container
-COPY . /code
-
-# Expose the port number that the application will listen on
+# Expose the backend port
 EXPOSE 8000
 
-# Start the server with uvicorn
-CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the server
+CMD ["node", "server.js"]

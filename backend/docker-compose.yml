@@ -1,21 +1,24 @@
 services:
-    app:
-        build: .
-        command: "poetry run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000"
-        volumes:
-            - ./:/code/
-        ports:
-            - 8001:8000
-        depends_on:
-            - db
-        env_file:
-            - ".env.docker"
-    db:
-        image: mongo
-        volumes:
-            - "mongodb_data:/data/db"
-        ports:
-            - "27018:27017"
+  backend:
+    build: .           # <-- just a dot, not ./backend
+    command: "node server.js"
+    volumes:
+      - ./:/backend       # <-- updated to match WORKDIR in Dockerfile
+
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+    env_file:
+      - .env.docker         # this file should exist in backend/
+
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
 
 volumes:
-    mongodb_data:
+  mongo_data:
