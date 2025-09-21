@@ -3,7 +3,15 @@ import { MongoClient, ObjectId } from "mongodb";
 import { Game } from "./models.js";
 import { PyObjectId } from "./fields.js";
 
-
+// -------------------- Initialize Board -------------------- //
+// For example, a 3x3 tic-tac-toe board
+function initBoard() {
+  return [
+    [null, null, null],
+    [null, null, null],
+    [null, null, null]
+  ];
+}
 
 // -------------------- MongoDB Client -------------------- //
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017";
