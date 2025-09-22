@@ -1,7 +1,8 @@
 "use client";
 
-import { BACKEND_API_BASE_URL, BACKEND_WS_BASE_URL } from "@/constants";
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { BACKEND_API_BASE_URL } from "@/constants";
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
 
 import { PetProjectButton } from "@/components/buttons";
 import { getPlayerNameFromLocalStorage } from "@/utils/localStorageUtils";
@@ -24,21 +25,31 @@ export interface GameData {
     finished_at: string | null;
 }
 
-
 export default function PlayGame({ params }: { params: { id: string } }) {
     const [data, setData] = useState<GameData | null>(null);
     const [isLoading, setLoading] = useState(true);
-    const [ws, setWs] = useState<WebSocket | null>(null);
 
     const playerName = getPlayerNameFromLocalStorage(params.id);
 
+    // useRef for Socket.IO
+    const socketRef = useRef<Socket | null>(null);
+
     useEffect(() => {
-        const ws = new WebSocket(`${BACKEND_WS_BASE_URL}/games/ws/${params.id}/`);
-        ws.addEventListener("open", () => {
+        const socket = io(BACKEND_API_BASE_URL, {
+            path: "/socket.io",
+            transports: ["websocket"],
+        });
+
+        socketRef.current = socket;
+
+        socket.on("connect", () => {
+            console.log("Connected to Socket.IO server:", socket.id);
+
+            // Fetch initial game data after connecting
             fetch(`${BACKEND_API_BASE_URL}/games/${params.id}/`)
-                .then((response) => {
-                    if (!response.ok) throw new Error();
-                    return response.json();
+                .then((res) => {
+                    if (!res.ok) throw new Error();
+                    return res.json();
                 })
                 .then((data) => {
                     setData(data);
@@ -48,17 +59,20 @@ export default function PlayGame({ params }: { params: { id: string } }) {
                     console.log("Something went wrong", err);
                 });
         });
-        ws.addEventListener("message", (event) => {
-            const data = JSON.parse(JSON.parse(event.data));
-            setData(data);
-        });
-        setWs(ws);
 
-        // clean up WS connection when the component is unmounted
+        socket.on("game_update", (updatedData: GameData) => {
+            setData(updatedData);
+        });
+
+        socket.on("disconnect", () => {
+            console.log("Disconnected from server");
+        });
+
+        // Cleanup on unmount
         return () => {
-            ws.close();
+            if (socket.connected) socket.disconnect();
         };
-    }, []);
+    }, [params.id]);
 
     if (isLoading) return <div className="text-black">loading...</div>;
     if (!data || !playerName) return <div className="text-black">no data</div>;
@@ -75,7 +89,7 @@ export default function PlayGame({ params }: { params: { id: string } }) {
         `}
         >
             <GameInfo gameData={data} setGameData={setData} playerName={playerName} />
-            <GameBoard gameData={data} playerName={playerName} ws={ws} />
+            <GameBoard gameData={data} playerName={playerName} ws={socketRef.current} />
         </div>
     );
 }
@@ -84,7 +98,7 @@ function WaitingPlayerToJoin({ id }: { id: string }) {
     const [isCopied, setIsCopied] = useState(false);
 
     const frontend_base_url =
-        window.location.protocol + "//" + window.location.host;
+        typeof window !== "undefined" ? window.location.origin : "";
     const link_to_share = `${frontend_base_url}/games/${id}/join/`;
 
     const handleLinkClick = () => {
@@ -139,7 +153,15 @@ function WaitingPlayerToJoin({ id }: { id: string }) {
     );
 }
 
-function GameInfo({ gameData, setGameData, playerName, }: { gameData: GameData, setGameData: Dispatch<SetStateAction<GameData | null>>; playerName: string; }) {
+function GameInfo({
+    gameData,
+    setGameData,
+    playerName,
+}: {
+    gameData: GameData;
+    setGameData: Dispatch<SetStateAction<GameData | null>>;
+    playerName: string;
+}) {
     const [replayInProgress, setReplayInProgress] = useState(false);
 
     const handleReplayGame = () => {
@@ -148,16 +170,13 @@ function GameInfo({ gameData, setGameData, playerName, }: { gameData: GameData, 
         }
         setReplayInProgress(true);
 
-        // init empty 6x7 board
         const N = 6;
         const M = 7;
         let newBoard = Array.from({ length: N }, () => Array(M).fill(0));
         const finalBoard = gameData.board;
 
-        // set empty
         setGameData({ ...gameData, board: newBoard, move_number: 0 });
 
-        // update board move by move
         setTimeout(() => {
             gameData.moves.forEach((move: MoveData, i: number) => {
                 setTimeout(() => {
@@ -188,7 +207,7 @@ function GameInfo({ gameData, setGameData, playerName, }: { gameData: GameData, 
         ) {
             gameStatus += "You won!";
         } else {
-            gameStatus += "You lost!"
+            gameStatus += "You lost!";
         }
     } else if (gameData.next_player_to_move_username == playerName) {
         gameStatus = "It's your turn";
@@ -236,10 +255,8 @@ function GameInfo({ gameData, setGameData, playerName, }: { gameData: GameData, 
     );
 }
 
-function GameBoard({gameData, playerName, ws}: {gameData: GameData; playerName: string; ws: WebSocket | null}) {
-    const [highlightedColumn, setHighlightedColumn] = useState<number | null>(
-        null,
-    );
+function GameBoard({ gameData, playerName, ws }: { gameData: GameData; playerName: string; ws: Socket | null }) {
+    const [highlightedColumn, setHighlightedColumn] = useState<number | null>(null);
 
     const handleColumnHover = (colIndex: number) => {
         setHighlightedColumn(colIndex);
@@ -249,12 +266,11 @@ function GameBoard({gameData, playerName, ws}: {gameData: GameData; playerName: 
     };
 
     const handleCellClick = (i: number, j: number) => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            const payload = {
+        if (ws && ws.connected) {
+            ws.emit("make_move", {
                 player: playerName,
                 col: j,
-            };
-            ws.send(JSON.stringify(payload));
+            });
         }
     };
 
@@ -320,9 +336,10 @@ function GameBoardCell({
     handleColumnHover: (colIndex: number) => void;
     handleColumnLeave: () => void;
 }) {
-    // highlight cell logic
     let toHighlight = false;
-    if (gameData.board[rowIndex][colIndex] == 0 && !gameData.finished_at &&
+    if (
+        gameData.board[rowIndex][colIndex] == 0 &&
+        !gameData.finished_at &&
         gameData.next_player_to_move_username == playerName &&
         highlightedColumn === colIndex
     ) {
